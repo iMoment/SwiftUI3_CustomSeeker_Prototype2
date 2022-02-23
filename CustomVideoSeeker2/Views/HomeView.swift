@@ -7,10 +7,12 @@
 
 import SwiftUI
 import AVFoundation
+import AVKit
 
 struct HomeView: View {
     @State var currentCoverImage: UIImage?
     @State var progress: CGFloat = 0
+    @State var url = URL(fileURLWithPath: Bundle.main.path(forResource: "IMG_2730", ofType: "MOV") ?? "")
     
     var body: some View {
         VStack {
@@ -52,15 +54,9 @@ struct HomeView: View {
                 let size = proxy.size
                 
                 ZStack {
-                    if let currentCoverImage = currentCoverImage {
-                        Image(uiImage: currentCoverImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: size.width, height: size.height)
-                            .cornerRadius(15)
-                    } else {
-                        ProgressView()
-                    }
+                    // Custom video player will show preview
+                    PreviewPlayer(url: url, progress: $progress)
+                        .cornerRadius(15)
                 }
                 .frame(width: size.width, height: size.height)
             }
@@ -73,7 +69,6 @@ struct HomeView: View {
                 .padding(.vertical, 30)
             
             // MARK: Cover Image Scroller
-            let url = URL(fileURLWithPath: Bundle.main.path(forResource: "IMG_2730", ofType: "MOV") ?? "")
             VideoCoverScroller(videoURL: url, progress: $progress)
                 .padding(.top, 50)
                 .padding(.horizontal, 15)
@@ -100,12 +95,38 @@ struct HomeView_Previews: PreviewProvider {
     }
 }
 
+// MARK: Custom Video Player
+struct PreviewPlayer: UIViewControllerRepresentable {
+    var url: URL
+    @Binding var progress: CGFloat
+    
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let player = AVPlayer(url: url)
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = false
+        controller.videoGravity = .resizeAspectFill
+        
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        let duration = uiViewController.player?.currentItem?.duration.seconds ?? 0
+        let time = CMTime(seconds: progress * duration, preferredTimescale: 600)
+        uiViewController.player?.seek(to: time)
+    }
+}
+
 // MARK: Custom Cover Image Scroller
 
 struct VideoCoverScroller: View {
     var videoURL: URL
     @Binding var progress: CGFloat
     @State var imageSequence: [UIImage]?
+    
+    // MARK: Gesture Properties
+    @State var offset: CGFloat = 0
+    @GestureState var isDragging: Bool = false
     
     var body: some View {
         GeometryReader { proxy in
@@ -128,6 +149,39 @@ struct VideoCoverScroller: View {
                 }
             }
             .cornerRadius(6)
+            .overlay(alignment: .leading, content: {
+                ZStack(alignment: .leading) {
+                    Color.black
+                        .opacity(0.25)
+                    
+                    PreviewPlayer(url: videoURL, progress: $progress)
+                        .frame(width: 35, height: 60)
+                        .cornerRadius(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(Color.white, lineWidth: 3)
+                                .padding(-3)
+                        )
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(Color.black.opacity(0.2))
+                                .padding(-4)
+                        )
+                        .offset(x: offset)
+                        .gesture(
+                            DragGesture()
+                                .updating($isDragging, body: { _, out, _ in
+                                    out = true
+                                })
+                                .onChanged({ value in
+                                    var translation = (isDragging ? value.location.x - 17.5 : 0)
+                                    translation = (translation < 0 ? 0 : translation)
+                                    translation = (translation > size.width - 35 ? size.width - 35 : translation)
+                                    offset = translation
+                                })
+                        )
+                }
+            })
             .onAppear {
                 generateImageSequence(size: size)
             }
@@ -144,7 +198,7 @@ struct VideoCoverScroller: View {
             // Converting Index to progress with respect to duration
             let progress = (CGFloat(index) * parts) / videoDuration()
             
-            retrieveCoverImageAt(progress: progress, size: size) { image in
+            retrieveCoverImageAt(progress: progress, size: CGSize(width: 100, height: 100)) { image in
                 // Check for image being nil
                 if imageSequence == nil { imageSequence = [] }
                 imageSequence?.append(image)
