@@ -8,9 +8,9 @@
 import SwiftUI
 
 struct ContentView: View {
+    
     var body: some View {
-        Text("Video Seeker 2 Prototype")
-            .padding()
+        HomeView()
     }
 }
 
